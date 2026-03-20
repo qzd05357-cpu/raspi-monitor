@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>温湿度グラフ（直近7日・1時間平均）</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    body {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 {
+      text-align: center;
+      font-size: 1.4em;
+      color: #a0c4ff;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      text-align: center;
+      font-size: 0.85em;
+      color: #888;
+      margin-bottom: 24px;
+    }
+    .chart-container {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+    .chart-title {
+      font-size: 1em;
+      font-weight: bold;
+      margin-bottom: 14px;
+      padding-left: 8px;
+      border-left: 4px solid;
+    }
+    .chart-title.temp { color: #ff7043; border-color: #ff7043; }
+    .chart-title.hum  { color: #42a5f5; border-color: #42a5f5; }
+    canvas { width: 100% !important; }
+    .updated {
+      text-align: right;
+      font-size: 0.75em;
+      color: #666;
+      margin-top: 8px;
+    }
+    .reload-btn {
+      display: block;
+      margin: 0 auto 28px;
+      padding: 10px 32px;
+      background: #0f3460;
+      color: #a0c4ff;
+      border: 1px solid #a0c4ff;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9em;
+    }
+    .reload-btn:hover { background: #1a5276; }
+    #status {
+      text-align: center;
+      font-size: 0.85em;
+      color: #aaa;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🌡 温湿度モニター（Raspberry Pi DHT11）</h1>
+  <p class="subtitle">直近7日間 ／ 1時間平均 ／ 自動更新: 10分ごと</p>
+
+  <button class="reload-btn" onclick="loadData()">🔄 グラフを最新化</button>
+  <div id="status">読み込み中...</div>
+
+  <div class="chart-container">
+    <div class="chart-title temp">🌡 温度推移（℃）</div>
+    <canvas id="tempChart" height="120"></canvas>
+    <div class="updated" id="tempUpdated"></div>
+  </div>
+
+  <div class="chart-container">
+    <div class="chart-title hum">💧 湿度推移（%）</div>
+    <canvas id="humChart" height="120"></canvas>
+    <div class="updated" id="humUpdated"></div>
+  </div>
+
+  <script>
+    const SPREADSHEET_ID = "16iU30vglfkdwiKbNV7LN6-HY4bskH6iHJAtpwlD3SAs";
+    const GID = "317642509"; // 「1時間平均」シート
+
+    let tempChartObj = null;
+    let humChartObj  = null;
+
+    function now() {
+      return new Date().toLocaleString('ja-JP');
+    }
+
+    function loadData() {
+      document.getElementById('status').textContent = '読み込み中...';
+      const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}&t=${Date.now()}`;
+
+      fetch(url)
+        .then(r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.text();
+        })
+        .then(csv => {
+          const lines = csv.trim().split('\n');
+          // 1行目はヘッダー
+          const labels = [], temps = [], hums = [];
+          for (let i = 1; i < lines.length; i++) {
+            const cols = lines[i].split(',').map(s => s.replace(/^"|"$/g, '').trim());
+            if (cols.length < 3) continue;
+            labels.push(cols[0]);
+            temps.push(parseFloat(cols[1]));
+            hums.push(parseFloat(cols[2]));
+          }
+          renderCharts(labels, temps, hums);
+          const t = now();
+          document.getElementById('tempUpdated').textContent = `更新: ${t}`;
+          document.getElementById('humUpdated').textContent  = `更新: ${t}`;
+          document.getElementById('status').textContent = `✅ ${labels.length} 件のデータを表示中（最終更新: ${t}）`;
+        })
+        .catch(err => {
+          document.getElementById('status').textContent = `❌ 読み込みエラー: ${err.message}`;
+          console.error(err);
+        });
+    }
+
+    function renderCharts(labels, temps, hums) {
+      // X軸ラベルを間引く（データが多いとき6時間ごとに表示）
+      const tickLabels = labels.map((l, i) => (i % 6 === 0) ? l.slice(0, 13) : '');
+
+      const commonOptions = {
+        responsive: true,
+        animation: false,
+        plugins: { legend: { labels: { color: '#ccc' } } },
+        scales: {
+          x: {
+            ticks: {
+              color: '#aaa',
+              maxRotation: 45,
+              autoSkip: false,
+              callback: function(val, i) { return tickLabels[i] || ''; }
+            },
+            grid: { color: 'rgba(255,255,255,0.05)' }
+          },
+          y: {
+            ticks: { color: '#aaa' },
+            grid: { color: 'rgba(255,255,255,0.08)' }
+          }
+        }
+      };
+
+      // 温度グラフ
+      if (tempChartObj) tempChartObj.destroy();
+      tempChartObj = new Chart(document.getElementById('tempChart'), {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: '温度 (℃)',
+            data: temps,
+            borderColor: '#ff7043',
+            backgroundColor: 'rgba(255,112,67,0.1)',
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.3,
+            fill: true,
+          }]
+        },
+        options: {
+          ...commonOptions,
+          scales: {
+            ...commonOptions.scales,
+            y: { ...commonOptions.scales.y, title: { display: true, text: '℃', color: '#aaa' } }
+          }
+        }
+      });
+
+      // 湿度グラフ
+      if (humChartObj) humChartObj.destroy();
+      humChartObj = new Chart(document.getElementById('humChart'), {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: '湿度 (%)',
+            data: hums,
+            borderColor: '#42a5f5',
+            backgroundColor: 'rgba(66,165,245,0.1)',
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.3,
+            fill: true,
+          }]
+        },
+        options: {
+          ...commonOptions,
+          scales: {
+            ...commonOptions.scales,
+            y: { ...commonOptions.scales.y, title: { display: true, text: '%', color: '#aaa' } }
+          }
+        }
+      });
+    }
+
+    // 初回ロード
+    loadData();
+
+    // 10分ごとに自動更新
+    setInterval(loadData, 10 * 60 * 1000);
+  </script>
+</body>
+</html>

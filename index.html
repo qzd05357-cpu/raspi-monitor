@@ -100,8 +100,10 @@
 
   <!-- 表示モード切替 -->
   <div class="mode-selector">
-    <button class="mode-btn active" id="btn7d"  onclick="switchMode('7d')">直近7日・1時間平均</button>
-    <button class="mode-btn"        id="btn30d" onclick="switchMode('30d')">直近30日・6時間平均</button>
+    <button class="mode-btn active" id="btn7d"   onclick="switchMode('7d')">直近7日・1時間平均</button>
+    <button class="mode-btn"        id="btn30d"  onclick="switchMode('30d')">直近30日・6時間平均</button>
+    <button class="mode-btn"        id="btn90d"  onclick="switchMode('90d')">直近90日・12時間平均</button>
+    <button class="mode-btn"        id="btn180d" onclick="switchMode('180d')">直近180日・24時間平均</button>
   </div>
 
   <button class="reload-btn" onclick="loadData()">🔄 グラフを最新化</button>
@@ -125,9 +127,17 @@
     const GID_1H  = "317642509";
     const GID_RAW = "0";
 
+    // モード定義: { days: 表示日数, hours: 集計時間単位, gid: データソース }
+    const MODES = {
+      '7d':   { days:   7, hours:  1, gid: GID_1H,  label: '直近7日・1時間平均' },
+      '30d':  { days:  30, hours:  6, gid: GID_RAW, label: '直近30日・6時間平均' },
+      '90d':  { days:  90, hours: 12, gid: GID_RAW, label: '直近90日・12時間平均' },
+      '180d': { days: 180, hours: 24, gid: GID_RAW, label: '直近180日・24時間平均' },
+    };
+
     let tempChartObj = null;
     let humChartObj  = null;
-    let currentMode  = '7d'; // '7d' or '30d'
+    let currentMode  = '7d';
 
     function now() {
       return new Date().toLocaleString('ja-JP');
@@ -135,17 +145,16 @@
 
     function switchMode(mode) {
       currentMode = mode;
-      document.getElementById('btn7d').classList.toggle('active',  mode === '7d');
-      document.getElementById('btn30d').classList.toggle('active', mode === '30d');
+      ['7d','30d','90d','180d'].forEach(m => {
+        document.getElementById('btn' + m).classList.toggle('active', m === mode);
+      });
       loadData();
     }
 
     function loadData() {
       document.getElementById('status').textContent = '読み込み中...';
-
-      // モードに応じてシートを切り替え
-      const gid = (currentMode === '7d') ? GID_1H : GID_RAW;
-      const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}&t=${Date.now()}`;
+      const cfg = MODES[currentMode];
+      const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&gid=${cfg.gid}&t=${Date.now()}`;
 
       fetch(url)
         .then(r => {
@@ -164,11 +173,11 @@
           }
 
           let labels, temps, hums;
+          const cutoff = new Date();
+          cutoff.setDate(cutoff.getDate() - cfg.days);
 
           if (currentMode === '7d') {
-            // 直近7日・1時間平均シートから絞り込み
-            const cutoff = new Date();
-            cutoff.setDate(cutoff.getDate() - 7);
+            // 1時間平均シートから直近7日を絞り込み
             labels = []; temps = []; hums = [];
             for (let i = 0; i < allLabels.length; i++) {
               if (new Date(allLabels[i]) >= cutoff) {
@@ -178,17 +187,13 @@
               }
             }
           } else {
-            // 直近30日・6時間平均をJS側で集計（生データから）
-            const cutoff = new Date();
-            cutoff.setDate(cutoff.getDate() - 30);
-
-            // 6時間単位のキーで集計
+            // 生データから指定時間単位で集計
             const bucket = {};
             for (let i = 0; i < allLabels.length; i++) {
               const dt = new Date(allLabels[i]);
               if (dt < cutoff) continue;
-              const h6 = Math.floor(dt.getHours() / 6) * 6;
-              const key = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(h6).padStart(2,'0')}:00`;
+              const hUnit = Math.floor(dt.getHours() / cfg.hours) * cfg.hours;
+              const key = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(hUnit).padStart(2,'0')}:00`;
               if (!bucket[key]) bucket[key] = { temp: [], hum: [] };
               bucket[key].temp.push(allTemps[i]);
               bucket[key].hum.push(allHums[i]);
@@ -203,8 +208,7 @@
           const t = now();
           document.getElementById('tempUpdated').textContent = `更新: ${t}`;
           document.getElementById('humUpdated').textContent  = `更新: ${t}`;
-          const modeLabel = (currentMode === '7d') ? '直近7日・1時間平均' : '直近30日・6時間平均';
-          document.getElementById('status').textContent = `✅ ${modeLabel} / ${labels.length} 件（最終更新: ${t}）`;
+          document.getElementById('status').textContent = `✅ ${cfg.label} / ${labels.length} 件（最終更新: ${t}）`;
         })
         .catch(err => {
           document.getElementById('status').textContent = `❌ 読み込みエラー: ${err.message}`;
@@ -213,9 +217,10 @@
     }
 
     function renderCharts(labels, temps, hums) {
-      // X軸ラベルの間引き間隔をモードで変更
-      // 7d(168件): 6時間ごと=6件おき / 30d(120件): 1日ごと=4件おき
-      const step = (currentMode === '7d') ? 6 : 4;
+      // X軸ラベルの間引き間隔をモードで調整
+      // 7d(~168件):6おき / 30d(~120件):4おき / 90d(~180件):7おき(1日) / 180d(~180件):7おき(1日)
+      const stepMap = { '7d': 6, '30d': 4, '90d': 2, '180d': 1 };
+      const step = stepMap[currentMode] || 6;
       const tickLabels = labels.map((l, i) => (i % step === 0) ? l.slice(0, 13) : '');
 
       const commonOptions = {

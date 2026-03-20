@@ -41,7 +41,10 @@
     }
     .chart-title.temp { color: #ff7043; border-color: #ff7043; }
     .chart-title.hum  { color: #42a5f5; border-color: #42a5f5; }
-    canvas { width: 100% !important; }
+    .canvas-wrapper {
+      position: relative;
+      height: 320px;
+    }
     .updated {
       text-align: right;
       font-size: 0.75em;
@@ -77,13 +80,13 @@
 
   <div class="chart-container">
     <div class="chart-title temp">🌡 温度推移（℃）</div>
-    <canvas id="tempChart" height="120"></canvas>
+    <div class="canvas-wrapper"><canvas id="tempChart"></canvas></div>
     <div class="updated" id="tempUpdated"></div>
   </div>
 
   <div class="chart-container">
     <div class="chart-title hum">💧 湿度推移（%）</div>
-    <canvas id="humChart" height="120"></canvas>
+    <div class="canvas-wrapper"><canvas id="humChart"></canvas></div>
     <div class="updated" id="humUpdated"></div>
   </div>
 
@@ -110,13 +113,25 @@
         .then(csv => {
           const lines = csv.trim().split('\n');
           // 1行目はヘッダー
-          const labels = [], temps = [], hums = [];
+          const allLabels = [], allTemps = [], allHums = [];
           for (let i = 1; i < lines.length; i++) {
             const cols = lines[i].split(',').map(s => s.replace(/^"|"$/g, '').trim());
             if (cols.length < 3) continue;
-            labels.push(cols[0]);
-            temps.push(parseFloat(cols[1]));
-            hums.push(parseFloat(cols[2]));
+            allLabels.push(cols[0]);
+            allTemps.push(parseFloat(cols[1]));
+            allHums.push(parseFloat(cols[2]));
+          }
+          // 直近7日分のみに絞り込む
+          const DAYS = 7;
+          const cutoff = new Date();
+          cutoff.setDate(cutoff.getDate() - DAYS);
+          const labels = [], temps = [], hums = [];
+          for (let i = 0; i < allLabels.length; i++) {
+            if (new Date(allLabels[i]) >= cutoff) {
+              labels.push(allLabels[i]);
+              temps.push(allTemps[i]);
+              hums.push(allHums[i]);
+            }
           }
           renderCharts(labels, temps, hums);
           const t = now();
@@ -136,6 +151,7 @@
 
       const commonOptions = {
         responsive: true,
+        maintainAspectRatio: false,
         animation: false,
         plugins: { legend: { labels: { color: '#ccc' } } },
         scales: {

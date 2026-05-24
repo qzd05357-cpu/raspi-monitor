@@ -364,29 +364,48 @@
     // ===========================================================
     const SW_SPREADSHEET_ID = "16iU30vglfkdwiKbNV7LN6-HY4bskH6iHJAtpwlD3SAs";
     const SW_DEVICES = [
-      { name: "トイレ",   gid: "1917349074", colorT: "#FF6B6B", colorH: "#FF9F8B", cls: "sw0" },
-      { name: "リビング", gid: "1678891253", colorT: "#FF9F43", colorH: "#FFD0A0", cls: "sw1" },
-      { name: "外",       gid: "1925376014", colorT: "#54A0FF", colorH: "#A0D4FF", cls: "sw2" },
+      { name: "トイレ",   gid: "1917349074", colorT: "#FF6B6B", colorH: "#FF9F8B", cls: "sw0", icon: "🚽" },
+      { name: "リビング", gid: "1678891253", colorT: "#FF9F43", colorH: "#FFD0A0", cls: "sw1", icon: "🛋️" },
+      { name: "外",       gid: "1925376014", colorT: "#54A0FF", colorH: "#A0D4FF", cls: "sw2", icon: "🌿" },
     ];
     const SW_DAYS = 7;
     let swLoaded = false;
-    const swCharts = {};  // { gid: { temp: Chart, hum: Chart } }
+    const swCharts = {};
+
+    function buildSwDom() {
+      const container = document.getElementById('sw-charts');
+      if (container.children.length > 0) return;  // 既に生成済み
+      SW_DEVICES.forEach((dev, idx) => {
+        const section = document.createElement('div');
+        section.id = `sw-section-${idx}`;
+        section.innerHTML = `
+          <h2 style="text-align:center;color:#a0c4ff;margin:24px 0 12px">${dev.icon} ${dev.name}</h2>
+          <div class="chart-container">
+            <div class="chart-title ${dev.cls}">🌡 温度推移（℃）</div>
+            <div class="canvas-wrapper"><canvas id="sw-temp-${idx}"></canvas></div>
+          </div>
+          <div class="chart-container">
+            <div class="chart-title ${dev.cls}">💧 湿度推移（%）</div>
+            <div class="canvas-wrapper"><canvas id="sw-hum-${idx}"></canvas></div>
+          </div>`;
+        container.appendChild(section);
+      });
+    }
 
     function loadSwitchBotData() {
       document.getElementById('sw-status').textContent = '読み込み中...';
-      const container = document.getElementById('sw-charts');
+      buildSwDom();  // DOM を先に全デバイス分作成（順序固定）
+
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - SW_DAYS);
-
       let completed = 0;
+
       SW_DEVICES.forEach((dev, idx) => {
         const url = `https://docs.google.com/spreadsheets/d/${SW_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&gid=${dev.gid}&t=${Date.now()}`;
         fetch(url)
           .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
           .then(csv => {
             const lines = csv.trim().split('\n');
-            const labels = [], temps = [], hums = [];
-            // 1時間平均に集計
             const bucket = {};
             for (let i = 1; i < lines.length; i++) {
               const cols = lines[i].split(',').map(s => s.replace(/^"|"$/g, '').trim());
@@ -398,49 +417,31 @@
               bucket[key].t.push(parseFloat(cols[1]));
               bucket[key].h.push(parseFloat(cols[2]));
             }
-            Object.keys(bucket).sort().forEach(k => {
-              const b = bucket[k];
-              labels.push(k);
-              temps.push(+(b.t.reduce((a,v)=>a+v,0)/b.t.length).toFixed(1));
-              hums.push( +(b.h.reduce((a,v)=>a+v,0)/b.h.length).toFixed(1));
-            });
+            const sortedKeys = Object.keys(bucket).sort();
+            const labels = sortedKeys;
+            const temps  = sortedKeys.map(k => +(bucket[k].t.reduce((a,v)=>a+v,0)/bucket[k].t.length).toFixed(1));
+            const hums   = sortedKeys.map(k => +(bucket[k].h.reduce((a,v)=>a+v,0)/bucket[k].h.length).toFixed(1));
 
-            renderSwChart(dev, idx, labels, temps, hums, container);
+            renderSwChart(dev, idx, labels, temps, hums);
             completed++;
             if (completed === SW_DEVICES.length) {
-              const now = new Date().toLocaleString('ja-JP');
               document.getElementById('sw-status').textContent =
-                `✅ 直近${SW_DAYS}日・1時間平均 / 最終更新: ${now}`;
+                `✅ 直近${SW_DAYS}日・1時間平均 / 最終更新: ${new Date().toLocaleString('ja-JP')}`;
               swLoaded = true;
             }
           })
           .catch(err => {
-            document.getElementById('sw-status').textContent = `❌ 読み込みエラー: ${err.message}`;
+            document.getElementById('sw-status').textContent = `❌ 読み込みエラー (${dev.name}): ${err.message}`;
           });
       });
     }
 
-    function renderSwChart(dev, idx, labels, temps, hums, container) {
-      // DOM 生成（初回のみ）
-      let section = document.getElementById(`sw-section-${idx}`);
-      if (!section) {
-        section = document.createElement('div');
-        section.id = `sw-section-${idx}`;
-        section.innerHTML = `
-          <h2 style="text-align:center;color:#a0c4ff;margin:24px 0 12px">${['🚽','🛋️','🌿'][idx]} ${dev.name}</h2>
-          <div class="chart-container">
-            <div class="chart-title ${dev.cls}">🌡 温度推移（℃）</div>
-            <div class="canvas-wrapper"><canvas id="sw-temp-${idx}"></canvas></div>
-          </div>
-          <div class="chart-container">
-            <div class="chart-title ${dev.cls}">💧 湿度推移（%）</div>
-            <div class="canvas-wrapper"><canvas id="sw-hum-${idx}"></canvas></div>
-          </div>`;
-        container.appendChild(section);
-      }
-
-      const tickStep = Math.max(1, Math.floor(labels.length / 24));
+    function renderSwChart(dev, idx, labels, temps, hums) {
+      const n = labels.length;
+      const tickStep = n <= 24 ? 1 : Math.floor(n / 24);
       const tickLabels = labels.map((l, i) => (i % tickStep === 0) ? l.slice(5, 13) : '');
+      const ptRadius = n <= 12 ? 3 : 0;  // データ少量時は点を表示
+
       const commonOpts = {
         responsive: true, maintainAspectRatio: false, animation: false,
         plugins: { legend: { labels: { color: '#ccc' } } },
@@ -460,7 +461,7 @@
         type: 'line',
         data: { labels, datasets: [{ label: `${dev.name} 温度 (℃)`, data: temps,
           borderColor: dev.colorT, backgroundColor: dev.colorT+'22',
-          borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: true }] },
+          borderWidth: 1.5, pointRadius: ptRadius, tension: 0.3, fill: true }] },
         options: { ...commonOpts, scales: { ...commonOpts.scales,
           y: { ...commonOpts.scales.y, title: { display: true, text: '℃', color: '#aaa' } } } }
       });
@@ -469,7 +470,7 @@
         type: 'line',
         data: { labels, datasets: [{ label: `${dev.name} 湿度 (%)`, data: hums,
           borderColor: dev.colorH, backgroundColor: dev.colorH+'22',
-          borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: true }] },
+          borderWidth: 1.5, pointRadius: ptRadius, tension: 0.3, fill: true }] },
         options: { ...commonOpts, scales: { ...commonOpts.scales,
           y: { ...commonOpts.scales.y, title: { display: true, text: '%', color: '#aaa' } } } }
       });

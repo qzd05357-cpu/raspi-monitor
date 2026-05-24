@@ -410,7 +410,8 @@
             for (let i = 1; i < lines.length; i++) {
               const cols = lines[i].split(',').map(s => s.replace(/^"|"$/g, '').trim());
               if (cols.length < 3) continue;
-              const dt = new Date(cols[0]);
+              // Safari は "YYYY-MM-DD HH:MM:SS" を Invalid Date にするため T区切りに変換
+              const dt = new Date(cols[0].replace(' ', 'T'));
               if (isNaN(dt) || dt < cutoff) continue;
               const key = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:00`;
               if (!bucket[key]) bucket[key] = { t: [], h: [] };

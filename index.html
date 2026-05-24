@@ -92,11 +92,45 @@
       color: #aaa;
       margin-bottom: 16px;
     }
+    /* ページタブ */
+    .page-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 0;
+      margin-bottom: 28px;
+    }
+    .page-tab {
+      padding: 10px 36px;
+      background: transparent;
+      color: #888;
+      border: 1px solid #a0c4ff;
+      cursor: pointer;
+      font-size: 1em;
+      transition: all 0.2s;
+    }
+    .page-tab:first-child { border-radius: 6px 0 0 6px; }
+    .page-tab:last-child  { border-radius: 0 6px 6px 0; }
+    .page-tab.active { background: #a0c4ff; color: #1a1a2e; font-weight: bold; }
+    .page-tab:hover:not(.active) { background: #0f3460; color: #a0c4ff; }
+    /* SwitchBot デバイス色 */
+    .chart-title.sw0 { color: #FF6B6B; border-color: #FF6B6B; }
+    .chart-title.sw1 { color: #FF9F43; border-color: #FF9F43; }
+    .chart-title.sw2 { color: #54A0FF; border-color: #54A0FF; }
+    .sw-status { text-align: center; font-size: 0.85em; color: #aaa; margin-bottom: 16px; }
   </style>
 </head>
 <body>
-  <h1>🌡 温湿度モニター（Raspberry Pi DHT11）</h1>
+  <h1>🌡 温湿度モニター</h1>
   <p class="subtitle">自動更新: 10分ごと</p>
+
+  <!-- ページタブ -->
+  <div class="page-tabs">
+    <button class="page-tab active" id="tab-raspi"     onclick="switchPage('raspi')">🍓 Raspberry Pi</button>
+    <button class="page-tab"        id="tab-switchbot" onclick="switchPage('switchbot')">🤖 SwitchBot</button>
+  </div>
+
+  <!-- ===== Raspberry Pi セクション ===== -->
+  <div id="page-raspi">
 
   <!-- 表示モード切替 -->
   <div class="mode-selector">
@@ -120,6 +154,16 @@
     <div class="canvas-wrapper"><canvas id="humChart"></canvas></div>
     <div class="updated" id="humUpdated"></div>
   </div>
+
+  </div><!-- /page-raspi -->
+
+  <!-- ===== SwitchBot セクション ===== -->
+  <div id="page-switchbot" style="display:none">
+    <button class="reload-btn" onclick="loadSwitchBotData()">🔄 グラフを最新化</button>
+    <div class="sw-status" id="sw-status">読み込み中...</div>
+
+    <div id="sw-charts"></div>
+  </div><!-- /page-switchbot -->
 
   <script>
     const SPREADSHEET_ID = "16iU30vglfkdwiKbNV7LN6-HY4bskH6iHJAtpwlD3SAs";
@@ -303,6 +347,140 @@
 
     // 10分ごとに自動更新
     setInterval(loadData, 10 * 60 * 1000);
+
+    // ===========================================================
+    // ページタブ切替
+    // ===========================================================
+    function switchPage(page) {
+      document.getElementById('page-raspi').style.display     = (page === 'raspi')     ? '' : 'none';
+      document.getElementById('page-switchbot').style.display = (page === 'switchbot') ? '' : 'none';
+      document.getElementById('tab-raspi').classList.toggle('active',     page === 'raspi');
+      document.getElementById('tab-switchbot').classList.toggle('active', page === 'switchbot');
+      if (page === 'switchbot' && !swLoaded) loadSwitchBotData();
+    }
+
+    // ===========================================================
+    // SwitchBot データ取得・描画
+    // ===========================================================
+    const SW_SPREADSHEET_ID = "16iU30vglfkdwiKbNV7LN6-HY4bskH6iHJAtpwlD3SAs";
+    const SW_DEVICES = [
+      { name: "トイレ",   gid: "1917349074", colorT: "#FF6B6B", colorH: "#FF9F8B", cls: "sw0" },
+      { name: "リビング", gid: "1678891253", colorT: "#FF9F43", colorH: "#FFD0A0", cls: "sw1" },
+      { name: "外",       gid: "1925376014", colorT: "#54A0FF", colorH: "#A0D4FF", cls: "sw2" },
+    ];
+    const SW_DAYS = 7;
+    let swLoaded = false;
+    const swCharts = {};  // { gid: { temp: Chart, hum: Chart } }
+
+    function loadSwitchBotData() {
+      document.getElementById('sw-status').textContent = '読み込み中...';
+      const container = document.getElementById('sw-charts');
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - SW_DAYS);
+
+      let completed = 0;
+      SW_DEVICES.forEach((dev, idx) => {
+        const url = `https://docs.google.com/spreadsheets/d/${SW_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&gid=${dev.gid}&t=${Date.now()}`;
+        fetch(url)
+          .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
+          .then(csv => {
+            const lines = csv.trim().split('\n');
+            const labels = [], temps = [], hums = [];
+            // 1時間平均に集計
+            const bucket = {};
+            for (let i = 1; i < lines.length; i++) {
+              const cols = lines[i].split(',').map(s => s.replace(/^"|"$/g, '').trim());
+              if (cols.length < 3) continue;
+              const dt = new Date(cols[0]);
+              if (isNaN(dt) || dt < cutoff) continue;
+              const key = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:00`;
+              if (!bucket[key]) bucket[key] = { t: [], h: [] };
+              bucket[key].t.push(parseFloat(cols[1]));
+              bucket[key].h.push(parseFloat(cols[2]));
+            }
+            Object.keys(bucket).sort().forEach(k => {
+              const b = bucket[k];
+              labels.push(k);
+              temps.push(+(b.t.reduce((a,v)=>a+v,0)/b.t.length).toFixed(1));
+              hums.push( +(b.h.reduce((a,v)=>a+v,0)/b.h.length).toFixed(1));
+            });
+
+            renderSwChart(dev, idx, labels, temps, hums, container);
+            completed++;
+            if (completed === SW_DEVICES.length) {
+              const now = new Date().toLocaleString('ja-JP');
+              document.getElementById('sw-status').textContent =
+                `✅ 直近${SW_DAYS}日・1時間平均 / 最終更新: ${now}`;
+              swLoaded = true;
+            }
+          })
+          .catch(err => {
+            document.getElementById('sw-status').textContent = `❌ 読み込みエラー: ${err.message}`;
+          });
+      });
+    }
+
+    function renderSwChart(dev, idx, labels, temps, hums, container) {
+      // DOM 生成（初回のみ）
+      let section = document.getElementById(`sw-section-${idx}`);
+      if (!section) {
+        section = document.createElement('div');
+        section.id = `sw-section-${idx}`;
+        section.innerHTML = `
+          <h2 style="text-align:center;color:#a0c4ff;margin:24px 0 12px">${['🚽','🛋️','🌿'][idx]} ${dev.name}</h2>
+          <div class="chart-container">
+            <div class="chart-title ${dev.cls}">🌡 温度推移（℃）</div>
+            <div class="canvas-wrapper"><canvas id="sw-temp-${idx}"></canvas></div>
+          </div>
+          <div class="chart-container">
+            <div class="chart-title ${dev.cls}">💧 湿度推移（%）</div>
+            <div class="canvas-wrapper"><canvas id="sw-hum-${idx}"></canvas></div>
+          </div>`;
+        container.appendChild(section);
+      }
+
+      const tickStep = Math.max(1, Math.floor(labels.length / 24));
+      const tickLabels = labels.map((l, i) => (i % tickStep === 0) ? l.slice(5, 13) : '');
+      const commonOpts = {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: { legend: { labels: { color: '#ccc' } } },
+        scales: {
+          x: { ticks: { color: '#aaa', maxRotation: 45, autoSkip: false,
+                         callback: (v, i) => tickLabels[i] || '' },
+               grid: { color: 'rgba(255,255,255,0.05)' } },
+          y: { ticks: { color: '#aaa' }, grid: { color: 'rgba(255,255,255,0.08)' } }
+        }
+      };
+
+      if (swCharts[idx]?.temp) swCharts[idx].temp.destroy();
+      if (swCharts[idx]?.hum)  swCharts[idx].hum.destroy();
+      if (!swCharts[idx]) swCharts[idx] = {};
+
+      swCharts[idx].temp = new Chart(document.getElementById(`sw-temp-${idx}`), {
+        type: 'line',
+        data: { labels, datasets: [{ label: `${dev.name} 温度 (℃)`, data: temps,
+          borderColor: dev.colorT, backgroundColor: dev.colorT+'22',
+          borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: true }] },
+        options: { ...commonOpts, scales: { ...commonOpts.scales,
+          y: { ...commonOpts.scales.y, title: { display: true, text: '℃', color: '#aaa' } } } }
+      });
+
+      swCharts[idx].hum = new Chart(document.getElementById(`sw-hum-${idx}`), {
+        type: 'line',
+        data: { labels, datasets: [{ label: `${dev.name} 湿度 (%)`, data: hums,
+          borderColor: dev.colorH, backgroundColor: dev.colorH+'22',
+          borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: true }] },
+        options: { ...commonOpts, scales: { ...commonOpts.scales,
+          y: { ...commonOpts.scales.y, title: { display: true, text: '%', color: '#aaa' } } } }
+      });
+    }
+
+    // 5分ごとにSwitchBotも自動更新（タブ表示中のみ）
+    setInterval(() => {
+      if (document.getElementById('page-switchbot').style.display !== 'none') {
+        loadSwitchBotData();
+      }
+    }, 5 * 60 * 1000);
   </script>
 </body>
 </html>

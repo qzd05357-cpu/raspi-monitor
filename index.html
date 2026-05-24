@@ -439,7 +439,13 @@
     function renderSwChart(dev, idx, labels, temps, hums) {
       const n = labels.length;
       const tickStep = n <= 24 ? 1 : Math.floor(n / 24);
-      const tickLabels = labels.map((l, i) => (i % tickStep === 0) ? l.slice(5, 13) : '');
+      // "2026-05-24 12:00" → "5/24 12:00" に整形
+      const formatTick = (l) => {
+        const m = l.match(/\d{4}-(\d{2})-(\d{2}) (\d{2}):(\d{2})/);
+        if (!m) return l;
+        return `${parseInt(m[1])}/${parseInt(m[2])} ${m[3]}:${m[4]}`;
+      };
+      const tickLabels = labels.map((l, i) => (i % tickStep === 0) ? formatTick(l) : '');
       const ptRadius = n <= 12 ? 3 : 0;  // データ少量時は点を表示
 
       const commonOpts = {

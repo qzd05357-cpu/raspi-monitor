@@ -127,6 +127,7 @@
   <div class="page-tabs">
     <button class="page-tab active" id="tab-raspi"     onclick="switchPage('raspi')">🍓 Raspberry Pi</button>
     <button class="page-tab"        id="tab-switchbot" onclick="switchPage('switchbot')">🤖 SwitchBot</button>
+    <button class="page-tab"        id="tab-compare"   onclick="switchPage('compare')">📊 比較</button>
   </div>
 
   <!-- ===== Raspberry Pi セクション ===== -->
@@ -173,6 +174,30 @@
 
     <div id="sw-charts"></div>
   </div><!-- /page-switchbot -->
+
+  <!-- ===== 比較セクション ===== -->
+  <div id="page-compare" style="display:none">
+
+    <div class="mode-selector">
+      <button class="mode-btn active" id="cmp-btn7d"   onclick="switchCmpMode('7d')">直近7日・1時間平均</button>
+      <button class="mode-btn"        id="cmp-btn30d"  onclick="switchCmpMode('30d')">直近30日・6時間平均</button>
+      <button class="mode-btn"        id="cmp-btn90d"  onclick="switchCmpMode('90d')">直近90日・12時間平均</button>
+      <button class="mode-btn"        id="cmp-btn180d" onclick="switchCmpMode('180d')">直近180日・24時間平均</button>
+    </div>
+
+    <button class="reload-btn" onclick="loadCmpData()">🔄 グラフを最新化</button>
+    <div class="sw-status" id="cmp-status">読み込み中...</div>
+
+    <div class="chart-container">
+      <div class="chart-title temp">🌡 温度推移（℃）</div>
+      <div class="canvas-wrapper"><canvas id="cmpTempChart"></canvas></div>
+    </div>
+    <div class="chart-container">
+      <div class="chart-title hum">💧 湿度推移（%）</div>
+      <div class="canvas-wrapper"><canvas id="cmpHumChart"></canvas></div>
+    </div>
+
+  </div><!-- /page-compare -->
 
   <script>
     const SPREADSHEET_ID = "16iU30vglfkdwiKbNV7LN6-HY4bskH6iHJAtpwlD3SAs";
@@ -363,9 +388,12 @@
     function switchPage(page) {
       document.getElementById('page-raspi').style.display     = (page === 'raspi')     ? '' : 'none';
       document.getElementById('page-switchbot').style.display = (page === 'switchbot') ? '' : 'none';
+      document.getElementById('page-compare').style.display   = (page === 'compare')   ? '' : 'none';
       document.getElementById('tab-raspi').classList.toggle('active',     page === 'raspi');
       document.getElementById('tab-switchbot').classList.toggle('active', page === 'switchbot');
+      document.getElementById('tab-compare').classList.toggle('active',   page === 'compare');
       if (page === 'switchbot' && !swLoaded) loadSwitchBotData();
+      if (page === 'compare'   && !cmpLoaded) loadCmpData();
     }
 
     // ===========================================================
@@ -516,6 +544,150 @@
         loadSwitchBotData();
       }
     }, 5 * 60 * 1000);
+
+    // ===========================================================
+    // 比較タブ（Raspi + SwitchBot 3台 を1グラフに重ね表示）
+    // ===========================================================
+    const CMP_MODES = {
+      '7d':   { days:   7, hours:  1, label: '直近7日・1時間平均',    raspiGid: GID_1H  },
+      '30d':  { days:  30, hours:  6, label: '直近30日・6時間平均',   raspiGid: GID_RAW },
+      '90d':  { days:  90, hours: 12, label: '直近90日・12時間平均',  raspiGid: GID_RAW },
+      '180d': { days: 180, hours: 24, label: '直近180日・24時間平均', raspiGid: GID_RAW },
+    };
+
+    const CMP_SOURCES = [
+      { name: 'Raspi',    isRaspi: true,  gid: null,          colorT: '#a0c4ff', colorH: '#5bc5fa' },
+      { name: 'トイレ',   isRaspi: false, gid: '1917349074',  colorT: '#FF6B6B', colorH: '#FF9F8B' },
+      { name: 'リビング', isRaspi: false, gid: '1678891253',  colorT: '#FF9F43', colorH: '#FFD0A0' },
+      { name: '外',       isRaspi: false, gid: '1925376014',  colorT: '#54A0FF', colorH: '#A0D4FF' },
+    ];
+
+    let cmpCurrentMode = '7d';
+    let cmpLoaded = false;
+    let cmpTempChart = null;
+    let cmpHumChart  = null;
+
+    function switchCmpMode(mode) {
+      cmpCurrentMode = mode;
+      ['7d','30d','90d','180d'].forEach(m => {
+        document.getElementById('cmp-btn' + m).classList.toggle('active', m === mode);
+      });
+      loadCmpData();
+    }
+
+    function loadCmpData() {
+      document.getElementById('cmp-status').textContent = '読み込み中...';
+      const cfg    = CMP_MODES[cmpCurrentMode];
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - cfg.days);
+
+      const promises = CMP_SOURCES.map(src => {
+        const gid = src.isRaspi ? cfg.raspiGid : src.gid;
+        const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}&t=${Date.now()}`;
+        return fetch(url)
+          .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
+          .then(csv => {
+            const lines = csv.trim().split('\n');
+            const raw = {};
+            for (let i = 1; i < lines.length; i++) {
+              const cols = lines[i].split(',').map(s => s.replace(/^"|"$/g, '').trim());
+              if (cols.length < 3) continue;
+              const dt = new Date(cols[0].replace(' ', 'T'));
+              if (isNaN(dt) || dt < cutoff) continue;
+              const hUnit = Math.floor(dt.getHours() / cfg.hours) * cfg.hours;
+              const key = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(hUnit).padStart(2,'0')}:00`;
+              if (!raw[key]) raw[key] = { t: [], h: [] };
+              raw[key].t.push(parseFloat(cols[1]));
+              raw[key].h.push(parseFloat(cols[2]));
+            }
+            const result = {};
+            for (const k of Object.keys(raw)) {
+              result[k] = {
+                t: +(raw[k].t.reduce((a,v)=>a+v,0) / raw[k].t.length).toFixed(1),
+                h: +(raw[k].h.reduce((a,v)=>a+v,0) / raw[k].h.length).toFixed(1),
+              };
+            }
+            return result;
+          });
+      });
+
+      Promise.all(promises)
+        .then(buckets => {
+          // 全ソースの時刻キーを統合してソート
+          const allKeys = new Set();
+          buckets.forEach(b => Object.keys(b).forEach(k => allKeys.add(k)));
+          const labels = Array.from(allKeys).sort();
+
+          const tempDatasets = CMP_SOURCES.map((src, i) => ({
+            label: src.name + ' 温度',
+            data: labels.map(k => (buckets[i][k] !== undefined ? buckets[i][k].t : null)),
+            borderColor: src.colorT,
+            backgroundColor: src.colorT + '22',
+            borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false, spanGaps: false,
+          }));
+
+          const humDatasets = CMP_SOURCES.map((src, i) => ({
+            label: src.name + ' 湿度',
+            data: labels.map(k => (buckets[i][k] !== undefined ? buckets[i][k].h : null)),
+            borderColor: src.colorH,
+            backgroundColor: src.colorH + '22',
+            borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false, spanGaps: false,
+          }));
+
+          renderCmpCharts(labels, tempDatasets, humDatasets);
+          document.getElementById('cmp-status').textContent =
+            `✅ ${cfg.label} / ${labels.length} 件（最終更新: ${new Date().toLocaleString('ja-JP')}）`;
+          cmpLoaded = true;
+        })
+        .catch(err => {
+          document.getElementById('cmp-status').textContent = `❌ 読み込みエラー: ${err.message}`;
+        });
+    }
+
+    function renderCmpCharts(labels, tempDatasets, humDatasets) {
+      const n = labels.length;
+      const tickStep = n <= 24 ? 1 : Math.floor(n / 24);
+      const formatTick = (l) => {
+        const m = l.match(/\d{4}-(\d{2})-(\d{2}) (\d{2}):(\d{2})/);
+        if (!m) return l;
+        return `${parseInt(m[1])}/${parseInt(m[2])} ${m[3]}:${m[4]}`;
+      };
+      const tickLabels = labels.map((l, i) => (i % tickStep === 0) ? formatTick(l) : '');
+
+      const commonOpts = {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: { legend: { labels: { color: '#ccc' } } },
+        scales: {
+          x: { ticks: { color: '#aaa', maxRotation: 45, autoSkip: false,
+                         callback: (v, i) => tickLabels[i] || '' },
+               grid: { color: 'rgba(255,255,255,0.05)' } },
+          y: { ticks: { color: '#aaa' }, grid: { color: 'rgba(255,255,255,0.08)' } }
+        }
+      };
+
+      if (cmpTempChart) cmpTempChart.destroy();
+      cmpTempChart = new Chart(document.getElementById('cmpTempChart'), {
+        type: 'line',
+        data: { labels, datasets: tempDatasets },
+        options: { ...commonOpts, scales: { ...commonOpts.scales,
+          y: { ...commonOpts.scales.y, title: { display: true, text: '℃', color: '#aaa' } } } }
+      });
+
+      if (cmpHumChart) cmpHumChart.destroy();
+      cmpHumChart = new Chart(document.getElementById('cmpHumChart'), {
+        type: 'line',
+        data: { labels, datasets: humDatasets },
+        options: { ...commonOpts, scales: { ...commonOpts.scales,
+          y: { ...commonOpts.scales.y, title: { display: true, text: '%', color: '#aaa' } } } }
+      });
+    }
+
+    // 10分ごとに比較タブも自動更新（タブ表示中のみ）
+    setInterval(() => {
+      if (document.getElementById('page-compare').style.display !== 'none') {
+        loadCmpData();
+      }
+    }, 10 * 60 * 1000);
   </script>
 </body>
 </html>

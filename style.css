@@ -1,0 +1,111 @@
+body {
+  background: #1a1a2e;
+  color: #e0e0e0;
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+  margin: 0;
+  padding: 20px;
+}
+h1 {
+  text-align: center;
+  font-size: 1.4em;
+  color: #a0c4ff;
+  margin-bottom: 8px;
+}
+.subtitle {
+  text-align: center;
+  font-size: 0.85em;
+  color: #888;
+  margin-bottom: 20px;
+}
+/* オプションボタン */
+.mode-selector {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.mode-btn {
+  padding: 8px 24px;
+  border-radius: 20px;
+  border: 1px solid #a0c4ff;
+  background: transparent;
+  color: #a0c4ff;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: all 0.2s;
+}
+.mode-btn:hover { background: #0f3460; }
+.mode-btn.active {
+  background: #a0c4ff;
+  color: #1a1a2e;
+  font-weight: bold;
+}
+.chart-container {
+  background: #16213e;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 24px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+.chart-title {
+  font-size: 1em;
+  font-weight: bold;
+  margin-bottom: 14px;
+  padding-left: 8px;
+  border-left: 4px solid;
+}
+.chart-title.temp { color: #ff7043; border-color: #ff7043; }
+.chart-title.hum  { color: #42a5f5; border-color: #42a5f5; }
+.canvas-wrapper {
+  position: relative;
+  height: 320px;
+}
+.updated {
+  text-align: right;
+  font-size: 0.75em;
+  color: #666;
+  margin-top: 8px;
+}
+.reload-btn {
+  display: block;
+  margin: 0 auto 20px;
+  padding: 10px 32px;
+  background: #0f3460;
+  color: #a0c4ff;
+  border: 1px solid #a0c4ff;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9em;
+}
+.reload-btn:hover { background: #1a5276; }
+#status {
+  text-align: center;
+  font-size: 0.85em;
+  color: #aaa;
+  margin-bottom: 16px;
+}
+/* ページタブ */
+.page-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 28px;
+}
+.page-tab {
+  padding: 10px 36px;
+  background: transparent;
+  color: #888;
+  border: 1px solid #a0c4ff;
+  cursor: pointer;
+  font-size: 1em;
+  transition: all 0.2s;
+}
+.page-tab:first-child { border-radius: 6px 0 0 6px; }
+.page-tab:last-child  { border-radius: 0 6px 6px 0; }
+.page-tab.active { background: #a0c4ff; color: #1a1a2e; font-weight: bold; }
+.page-tab:hover:not(.active) { background: #0f3460; color: #a0c4ff; }
+/* SwitchBot デバイス色 */
+.chart-title.sw0 { color: #FF6B6B; border-color: #FF6B6B; }
+.chart-title.sw1 { color: #FF9F43; border-color: #FF9F43; }
+.chart-title.sw2 { color: #54A0FF; border-color: #54A0FF; }
+.sw-status { text-align: center; font-size: 0.85em; color: #aaa; margin-bottom: 16px; }

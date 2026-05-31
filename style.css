@@ -109,3 +109,36 @@ h1 {
 .chart-title.sw1 { color: #FF9F43; border-color: #FF9F43; }
 .chart-title.sw2 { color: #54A0FF; border-color: #54A0FF; }
 .sw-status { text-align: center; font-size: 0.85em; color: #aaa; margin-bottom: 16px; }
+
+/* === 健康アラート === */
+.alert-banner {
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  margin: 0 0 14px;
+  font-weight: bold;
+  text-align: center;
+}
+.alert-banner.caution { background: #3a2e00; border: 1px solid #ffd700; color: #ffd700; }
+.alert-banner.warning { background: #3a1a00; border: 1px solid #ff8c00; color: #ff8c00; }
+.alert-banner.danger  { background: #3a0000; border: 1px solid #ff4444; color: #ff4444; }
+.stats-card {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin: 0 0 20px;
+  flex-wrap: wrap;
+}
+.stats-cell {
+  background: #16213e;
+  border-radius: 8px;
+  padding: 10px 20px;
+  text-align: center;
+  min-width: 90px;
+  border: 1px solid #2a3a5e;
+}
+.stats-cell .s-label { font-size: 0.75em; color: #888; margin-bottom: 4px; }
+.stats-cell .s-value { font-size: 1.3em; font-weight: bold; color: #e0e0e0; }
+.stats-cell.diff-caution .s-value { color: #ffd700; }
+.stats-cell.diff-warning .s-value { color: #ff8c00; }
+.stats-cell.diff-danger  .s-value { color: #ff4444; }

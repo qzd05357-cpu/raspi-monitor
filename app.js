@@ -136,6 +136,58 @@ function makeCutoff(days) {
 }
 
 // =====================================================
+// 健康アラート（期間平均との乖離）
+// =====================================================
+function calcPeriodAvg(temps) {
+  const valid = temps.filter(v => v !== null && !isNaN(v));
+  if (!valid.length) return null;
+  return +(valid.reduce((a, v) => a + v, 0) / valid.length).toFixed(1);
+}
+
+function updateHealthAlert(temps) {
+  const banner       = document.getElementById('raspi-alert-banner');
+  const statsCard    = document.getElementById('raspi-stats-card');
+  const statDiffCell = document.getElementById('stat-diff-cell');
+  const valid = temps.filter(v => v !== null && !isNaN(v));
+  if (!valid.length) {
+    banner.style.display    = 'none';
+    statsCard.style.display = 'none';
+    return;
+  }
+  const avg     = calcPeriodAvg(temps);
+  const current = valid[valid.length - 1];
+  const diff    = +(current - avg).toFixed(1);
+  const absDiff = Math.abs(diff);
+  const sign    = diff >= 0 ? '+' : '';
+
+  document.getElementById('stat-current').textContent = `${current}℃`;
+  document.getElementById('stat-avg').textContent     = `${avg}℃`;
+  document.getElementById('stat-diff').textContent    = `${sign}${diff}℃`;
+  statsCard.style.display = '';
+  statDiffCell.className = 'stats-cell' +
+    (absDiff >= 15 ? ' diff-danger' :
+     absDiff >= 10 ? ' diff-warning' :
+     absDiff >= 7  ? ' diff-caution' : '');
+
+  banner.className = 'alert-banner';
+  if (absDiff >= 15) {
+    banner.className += ' danger';
+    banner.textContent = `🔴 危険: 期間平均(${avg}℃)より ${sign}${diff}℃ 乖離 — 心血管リスクに注意`;
+    banner.style.display = '';
+  } else if (absDiff >= 10) {
+    banner.className += ' warning';
+    banner.textContent = `🟠 警告: 期間平均(${avg}℃)より ${sign}${diff}℃ 乖離 — 自律神経への影響あり`;
+    banner.style.display = '';
+  } else if (absDiff >= 7) {
+    banner.className += ' caution';
+    banner.textContent = `🟡 注意: 期間平均(${avg}℃)より ${sign}${diff}℃ 乖離 — 寒暖差疲労に注意`;
+    banner.style.display = '';
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+// =====================================================
 // Raspberry Pi タブ
 // =====================================================
 let tempChartObj = null;
@@ -168,12 +220,19 @@ function loadData() {
 
 function renderRaspiCharts(labels, temps, hums) {
   const ptRadius = labels.length <= 12 ? 3 : 0;
+  const avg      = calcPeriodAvg(temps);
+  const avgLine  = avg !== null ? labels.map(() => avg) : [];
   if (tempChartObj) tempChartObj.destroy();
   tempChartObj = new Chart(document.getElementById('tempChart'), {
     type: 'line',
-    data: { labels, datasets: [{ label: '温度 (℃)', data: temps,
-      borderColor: '#ff7043', backgroundColor: 'rgba(255,112,67,0.1)',
-      borderWidth: 1.5, pointRadius: ptRadius, tension: 0.3, fill: true }] },
+    data: { labels, datasets: [
+      { label: '温度 (℃)', data: temps,
+        borderColor: '#ff7043', backgroundColor: 'rgba(255,112,67,0.1)',
+        borderWidth: 1.5, pointRadius: ptRadius, tension: 0.3, fill: true },
+      { label: `期間平均 ${avg}℃`, data: avgLine,
+        borderColor: 'rgba(255,255,255,0.4)', backgroundColor: 'transparent',
+        borderWidth: 1, borderDash: [6, 3], pointRadius: 0, tension: 0, fill: false },
+    ] },
     options: buildChartOptions(labels, '℃'),
   });
   if (humChartObj) humChartObj.destroy();
@@ -184,6 +243,7 @@ function renderRaspiCharts(labels, temps, hums) {
       borderWidth: 1.5, pointRadius: ptRadius, tension: 0.3, fill: true }] },
     options: buildChartOptions(labels, '%'),
   });
+  updateHealthAlert(temps);
 }
 
 // =====================================================

@@ -429,6 +429,12 @@
       SW_DEVICES.forEach((dev, idx) => {
         const section = document.createElement('div');
         section.id = `sw-section-${idx}`;
+        // 照度グラフはリビング(idx===1)のみ追加
+        const luxHtml = (idx === 1) ? `
+          <div class="chart-container">
+            <div class="chart-title ${dev.cls}">☀️ 照度推移（level 1〜20）</div>
+            <div class="canvas-wrapper"><canvas id="sw-lux-${idx}"></canvas></div>
+          </div>` : '';
         section.innerHTML = `
           <h2 style="text-align:center;color:#a0c4ff;margin:24px 0 12px">${dev.icon} ${dev.name}</h2>
           <div class="chart-container">
@@ -438,7 +444,7 @@
           <div class="chart-container">
             <div class="chart-title ${dev.cls}">💧 湿度推移（%）</div>
             <div class="canvas-wrapper"><canvas id="sw-hum-${idx}"></canvas></div>
-          </div>`;
+          </div>${luxHtml}`;
         container.appendChild(section);
       });
     }
@@ -468,17 +474,28 @@
               if (isNaN(dt) || dt < cutoff) continue;
               const hUnit = Math.floor(dt.getHours() / cfg.hours) * cfg.hours;
               const key = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(hUnit).padStart(2,'0')}:00`;
-              if (!bucket[key]) bucket[key] = { t: [], h: [] };
+              if (!bucket[key]) bucket[key] = { t: [], h: [], l: [] };
               bucket[key].t.push(parseFloat(cols[1]));
               bucket[key].h.push(parseFloat(cols[2]));
+              // 照度は リビング(idx===1) の4列目が存在する場合のみ
+              if (idx === 1 && cols.length >= 4 && cols[3] !== '') {
+                const lv = parseFloat(cols[3]);
+                if (!isNaN(lv)) bucket[key].l.push(lv);
+              }
             }
             const sortedKeys = Object.keys(bucket).sort();
             const labels = sortedKeys;
             const temps  = sortedKeys.map(k => +(bucket[k].t.reduce((a,v)=>a+v,0)/bucket[k].t.length).toFixed(1));
             const hums   = sortedKeys.map(k => +(bucket[k].h.reduce((a,v)=>a+v,0)/bucket[k].h.length).toFixed(1));
+            // 照度: リビング(idx===1)のみ算出、データ無し時点は null
+            const lights = (idx === 1)
+              ? sortedKeys.map(k => bucket[k].l.length
+                  ? +(bucket[k].l.reduce((a,v)=>a+v,0)/bucket[k].l.length).toFixed(1)
+                  : null)
+              : null;
 
             totalCount += labels.length;
-            renderSwChart(dev, idx, labels, temps, hums);
+            renderSwChart(dev, idx, labels, temps, hums, lights);
             completed++;
             if (completed === SW_DEVICES.length) {
               document.getElementById('sw-status').textContent =
@@ -492,7 +509,7 @@
       });
     }
 
-    function renderSwChart(dev, idx, labels, temps, hums) {
+    function renderSwChart(dev, idx, labels, temps, hums, lights = null) {
       const n = labels.length;
       const tickStep = n <= 24 ? 1 : Math.floor(n / 24);
       // "2026-05-24 12:00" → "5/24 12:00" に整形
@@ -517,6 +534,7 @@
 
       if (swCharts[idx]?.temp) swCharts[idx].temp.destroy();
       if (swCharts[idx]?.hum)  swCharts[idx].hum.destroy();
+      if (swCharts[idx]?.lux)  swCharts[idx].lux.destroy();
       if (!swCharts[idx]) swCharts[idx] = {};
 
       swCharts[idx].temp = new Chart(document.getElementById(`sw-temp-${idx}`), {
@@ -536,6 +554,19 @@
         options: { ...commonOpts, scales: { ...commonOpts.scales,
           y: { ...commonOpts.scales.y, title: { display: true, text: '%', color: '#aaa' } } } }
       });
+
+      // 照度グラフ（リビングのみ）
+      if (lights !== null) {
+        swCharts[idx].lux = new Chart(document.getElementById(`sw-lux-${idx}`), {
+          type: 'line',
+          data: { labels, datasets: [{ label: `${dev.name} 照度 (level)`, data: lights,
+            borderColor: '#FFD700', backgroundColor: '#FFD70022',
+            borderWidth: 1.5, pointRadius: ptRadius, tension: 0.3, fill: true, spanGaps: false }] },
+          options: { ...commonOpts, scales: { ...commonOpts.scales,
+            y: { ...commonOpts.scales.y, min: 0, max: 20,
+                 title: { display: true, text: 'level', color: '#aaa' } } } }
+        });
+      }
     }
 
     // 5分ごとにSwitchBotも自動更新（タブ表示中のみ）

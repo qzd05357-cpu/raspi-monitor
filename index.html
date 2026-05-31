@@ -159,6 +159,15 @@
 
   <!-- ===== SwitchBot セクション ===== -->
   <div id="page-switchbot" style="display:none">
+
+    <!-- 表示モード切替 (SwitchBot) -->
+    <div class="mode-selector">
+      <button class="mode-btn active" id="sw-btn7d"   onclick="switchSwMode('7d')">直近7日・1時間平均</button>
+      <button class="mode-btn"        id="sw-btn30d"  onclick="switchSwMode('30d')">直近30日・6時間平均</button>
+      <button class="mode-btn"        id="sw-btn90d"  onclick="switchSwMode('90d')">直近90日・12時間平均</button>
+      <button class="mode-btn"        id="sw-btn180d" onclick="switchSwMode('180d')">直近180日・24時間平均</button>
+    </div>
+
     <button class="reload-btn" onclick="loadSwitchBotData()">🔄 グラフを最新化</button>
     <div class="sw-status" id="sw-status">読み込み中...</div>
 
@@ -368,9 +377,23 @@
       { name: "リビング", gid: "1678891253", colorT: "#FF9F43", colorH: "#FFD0A0", cls: "sw1", icon: "🛋️" },
       { name: "外",       gid: "1925376014", colorT: "#54A0FF", colorH: "#A0D4FF", cls: "sw2", icon: "🌿" },
     ];
-    const SW_DAYS = 7;
+    const SW_MODES = {
+      '7d':   { days:   7, hours:  1, label: '直近7日・1時間平均' },
+      '30d':  { days:  30, hours:  6, label: '直近30日・6時間平均' },
+      '90d':  { days:  90, hours: 12, label: '直近90日・12時間平均' },
+      '180d': { days: 180, hours: 24, label: '直近180日・24時間平均' },
+    };
+    let swCurrentMode = '7d';
     let swLoaded = false;
     const swCharts = {};
+
+    function switchSwMode(mode) {
+      swCurrentMode = mode;
+      ['7d','30d','90d','180d'].forEach(m => {
+        document.getElementById('sw-btn' + m).classList.toggle('active', m === mode);
+      });
+      loadSwitchBotData();
+    }
 
     function buildSwDom() {
       const container = document.getElementById('sw-charts');
@@ -396,9 +419,11 @@
       document.getElementById('sw-status').textContent = '読み込み中...';
       buildSwDom();  // DOM を先に全デバイス分作成（順序固定）
 
+      const cfg = SW_MODES[swCurrentMode];
       const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - SW_DAYS);
+      cutoff.setDate(cutoff.getDate() - cfg.days);
       let completed = 0;
+      let totalCount = 0;
 
       SW_DEVICES.forEach((dev, idx) => {
         const url = `https://docs.google.com/spreadsheets/d/${SW_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&gid=${dev.gid}&t=${Date.now()}`;
@@ -413,7 +438,8 @@
               // Safari は "YYYY-MM-DD HH:MM:SS" を Invalid Date にするため T区切りに変換
               const dt = new Date(cols[0].replace(' ', 'T'));
               if (isNaN(dt) || dt < cutoff) continue;
-              const key = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:00`;
+              const hUnit = Math.floor(dt.getHours() / cfg.hours) * cfg.hours;
+              const key = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(hUnit).padStart(2,'0')}:00`;
               if (!bucket[key]) bucket[key] = { t: [], h: [] };
               bucket[key].t.push(parseFloat(cols[1]));
               bucket[key].h.push(parseFloat(cols[2]));
@@ -423,11 +449,12 @@
             const temps  = sortedKeys.map(k => +(bucket[k].t.reduce((a,v)=>a+v,0)/bucket[k].t.length).toFixed(1));
             const hums   = sortedKeys.map(k => +(bucket[k].h.reduce((a,v)=>a+v,0)/bucket[k].h.length).toFixed(1));
 
+            totalCount += labels.length;
             renderSwChart(dev, idx, labels, temps, hums);
             completed++;
             if (completed === SW_DEVICES.length) {
               document.getElementById('sw-status').textContent =
-                `✅ 直近${SW_DAYS}日・1時間平均 / 最終更新: ${new Date().toLocaleString('ja-JP')}`;
+                `✅ ${cfg.label} / ${Math.round(totalCount / SW_DEVICES.length)} 件（最終更新: ${new Date().toLocaleString('ja-JP')}）`;
               swLoaded = true;
             }
           })

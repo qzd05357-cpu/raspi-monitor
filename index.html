@@ -15,6 +15,7 @@
   <div class="page-tabs">
     <button class="page-tab active" id="tab-raspi"     onclick="switchPage('raspi')">🍓 Raspberry Pi</button>
     <button class="page-tab"        id="tab-switchbot" onclick="switchPage('switchbot')">🤖 SwitchBot</button>
+    <button class="page-tab"        id="tab-daikin"    onclick="switchPage('daikin')">❄️ ダイキン</button>
     <button class="page-tab"        id="tab-compare"   onclick="switchPage('compare')">📊 比較</button>
   </div>
 
@@ -67,6 +68,30 @@
     <div class="sw-status" id="sw-status">読み込み中...</div>
     <div id="sw-charts"></div>
   </div><!-- /page-switchbot -->
+
+  <!-- ===== ダイキンセクション ===== -->
+  <div id="page-daikin" style="display:none">
+    <div class="mode-selector">
+      <button class="mode-btn active" id="dk-btn7d"   onclick="switchDkMode('7d')">直近7日・1時間平均</button>
+      <button class="mode-btn"        id="dk-btn30d"  onclick="switchDkMode('30d')">直近30日・6時間平均</button>
+      <button class="mode-btn"        id="dk-btn90d"  onclick="switchDkMode('90d')">直近90日・12時間平均</button>
+      <button class="mode-btn"        id="dk-btn180d" onclick="switchDkMode('180d')">直近180日・24時間平均</button>
+    </div>
+    <button class="reload-btn" onclick="loadDaikinData()">🔄 グラフを最新化</button>
+    <div class="sw-status" id="dk-status">読み込み中...</div>
+    <div class="chart-container">
+      <div class="chart-title temp">🌡 室内・室外温度推移（℃）</div>
+      <div class="canvas-wrapper"><canvas id="dkTempChart"></canvas></div>
+    </div>
+    <div class="chart-container">
+      <div class="chart-title hum">💧 室内湿度推移（%）</div>
+      <div class="canvas-wrapper"><canvas id="dkHumChart"></canvas></div>
+    </div>
+    <div class="chart-container">
+      <div class="chart-title" style="color:#34d399">⚡ 瞬間消費電力推移（W）</div>
+      <div class="canvas-wrapper"><canvas id="dkPowChart"></canvas></div>
+    </div>
+  </div><!-- /page-daikin -->
 
   <!-- ===== 比較セクション ===== -->
   <div id="page-compare" style="display:none">

@@ -4,6 +4,7 @@
 const SPREADSHEET_ID = "16iU30vglfkdwiKbNV7LN6-HY4bskH6iHJAtpwlD3SAs";
 const GID_1H  = "317642509";  // Raspi 1時間平均シート
 const GID_RAW = "0";          // Raspi 生データシート
+const GID_DK  = "";           // ダイキン（シートID: スプレッドシート作成後に設定）
 
 /**
  * 全タブ共通のモード定義。
@@ -23,10 +24,11 @@ const SW_DEVICES = [
 ];
 
 const CMP_SOURCES = [
-  { name: 'Raspi',    isRaspi: true,  gid: null,          colorT: '#a0c4ff', colorH: '#5bc5fa' },
-  { name: 'トイレ',   isRaspi: false, gid: '1917349074',  colorT: '#FF6B6B', colorH: '#FF9F8B' },
-  { name: 'リビング', isRaspi: false, gid: '1678891253',  colorT: '#FF9F43', colorH: '#FFD0A0' },
-  { name: '外',       isRaspi: false, gid: '1925376014',  colorT: '#54A0FF', colorH: '#A0D4FF' },
+  { name: 'Raspi',        isRaspi: true,  gid: null,          colorT: '#a0c4ff', colorH: '#5bc5fa',  isDaikin: false },
+  { name: 'トイレ',        isRaspi: false, gid: '1917349074',  colorT: '#FF6B6B', colorH: '#FF9F8B',  isDaikin: false },
+  { name: 'リビング',      isRaspi: false, gid: '1678891253',  colorT: '#FF9F43', colorH: '#FFD0A0',  isDaikin: false },
+  { name: '外',          isRaspi: false, gid: '1925376014',  colorT: '#54A0FF', colorH: '#A0D4FF',  isDaikin: false },
+  { name: 'ダイキン室内',   isRaspi: false, gid: GID_DK,        colorT: '#a78bfa', colorH: '#c4b5fd',  isDaikin: true  },
 ];
 
 // =====================================================
@@ -77,6 +79,40 @@ function bucketAggregate(csvText, cutoff, hours, hasLight = false) {
     temps:  labels.map(k => avg(bucket[k].t)),
     hums:   labels.map(k => avg(bucket[k].h)),
     lights: hasLight ? labels.map(k => bucket[k].l.length ? avg(bucket[k].l) : null) : null,
+  };
+}
+
+/**
+ * ダイキン専用集計: datetime,htemp,hhum,otemp,mompow,cmpfreq 形式のCSVを集計する。
+ * cmpfreq=0 の行は otemp をプロットしない（停止時の外気温を除外）。
+ */
+function bucketAggregateDaikin(csvText, cutoff, hours) {
+  const lines  = csvText.trim().split('\n');
+  const bucket = {};
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',').map(s => s.replace(/^"|"$/g, '').trim());
+    if (cols.length < 6) continue;
+    const dt = new Date(cols[0].replace(' ', 'T'));
+    if (isNaN(dt) || dt < cutoff) continue;
+    const hUnit = Math.floor(dt.getHours() / hours) * hours;
+    const key = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(hUnit).padStart(2,'0')}:00`;
+    if (!bucket[key]) bucket[key] = { htemp: [], hhum: [], otemp: [], mompow: [] };
+    bucket[key].htemp.push(parseFloat(cols[1]));
+    bucket[key].hhum.push(parseFloat(cols[2]));
+    const cmpfreq = parseFloat(cols[5]);
+    if (!isNaN(cmpfreq) && cmpfreq > 0) bucket[key].otemp.push(parseFloat(cols[3]));
+    bucket[key].mompow.push(parseFloat(cols[4]));
+  }
+
+  const avg    = arr => arr.length ? +(arr.reduce((a, v) => a + v, 0) / arr.length).toFixed(1) : null;
+  const labels = Object.keys(bucket).sort();
+  return {
+    labels,
+    htemps:  labels.map(k => avg(bucket[k].htemp)),
+    hhums:   labels.map(k => avg(bucket[k].hhum)),
+    otemps:  labels.map(k => bucket[k].otemp.length ? avg(bucket[k].otemp) : null),
+    mompows: labels.map(k => avg(bucket[k].mompow)),
   };
 }
 
@@ -347,6 +383,82 @@ function renderSwChart(dev, idx, labels, temps, hums, lights) {
 }
 
 // =====================================================
+// ダイキンタブ
+// =====================================================
+let dkCurrentMode = '7d';
+let dkLoaded      = false;
+let dkTempChart   = null;
+let dkHumChart    = null;
+let dkPowChart    = null;
+
+function switchDkMode(mode) {
+  dkCurrentMode = mode;
+  setActiveMode('dk-btn', mode);
+  loadDaikinData();
+}
+
+function loadDaikinData() {
+  document.getElementById('dk-status').textContent = '読み込み中...';
+  if (!GID_DK) {
+    document.getElementById('dk-status').textContent = '⚠️ ダイキンシートIDが未設定です（app.js の GID_DK を設定してください）';
+    return;
+  }
+  const cfg    = MODES[dkCurrentMode];
+  const cutoff = makeCutoff(cfg.days);
+  fetchCsv(GID_DK)
+    .then(csv => {
+      const { labels, htemps, hhums, otemps, mompows } = bucketAggregateDaikin(csv, cutoff, cfg.hours);
+      renderDaikinCharts(labels, htemps, hhums, otemps, mompows);
+      document.getElementById('dk-status').textContent =
+        `✅ ${cfg.label} / ${labels.length} 件（最終更新: ${new Date().toLocaleString('ja-JP')}）`;
+      dkLoaded = true;
+    })
+    .catch(err => {
+      document.getElementById('dk-status').textContent = `❌ 読み込みエラー: ${err.message}`;
+    });
+}
+
+function renderDaikinCharts(labels, htemps, hhums, otemps, mompows) {
+  const ptRadius = labels.length <= 12 ? 3 : 0;
+
+  if (dkTempChart) dkTempChart.destroy();
+  dkTempChart = new Chart(document.getElementById('dkTempChart'), {
+    type: 'line',
+    data: { labels, datasets: [
+      { label: '室内温度 (℃)', data: htemps,
+        borderColor: '#f43f5e', backgroundColor: '#f43f5e22',
+        borderWidth: 1.5, pointRadius: ptRadius, tension: 0.3, fill: true },
+      { label: '室外温度 (℃)', data: otemps,
+        borderColor: '#94a3b8', backgroundColor: '#94a3b822',
+        borderWidth: 1.5, pointRadius: ptRadius, tension: 0.3, fill: false, spanGaps: false },
+    ] },
+    options: buildChartOptions(labels, '℃'),
+  });
+
+  if (dkHumChart) dkHumChart.destroy();
+  dkHumChart = new Chart(document.getElementById('dkHumChart'), {
+    type: 'line',
+    data: { labels, datasets: [
+      { label: '室内湿度 (%)', data: hhums,
+        borderColor: '#3b82f6', backgroundColor: '#3b82f622',
+        borderWidth: 1.5, pointRadius: ptRadius, tension: 0.3, fill: true },
+    ] },
+    options: buildChartOptions(labels, '%', { min: 0, max: 100 }),
+  });
+
+  if (dkPowChart) dkPowChart.destroy();
+  dkPowChart = new Chart(document.getElementById('dkPowChart'), {
+    type: 'line',
+    data: { labels, datasets: [
+      { label: '瞬間消費電力 (W)', data: mompows,
+        borderColor: '#34d399', backgroundColor: '#34d39922',
+        borderWidth: 1.5, pointRadius: ptRadius, tension: 0.3, fill: true },
+    ] },
+    options: buildChartOptions(labels, 'W', { min: 0 }),
+  });
+}
+
+// =====================================================
 // 比較タブ（Raspi + SwitchBot 3台を1グラフに重ね表示）
 // =====================================================
 let cmpCurrentMode = '7d';
@@ -366,7 +478,17 @@ function loadCmpData() {
   const cutoff = makeCutoff(cfg.days);
 
   const promises = CMP_SOURCES.map(src => {
+    if (!src.isDaikin && !src.gid && !src.isRaspi) return Promise.resolve({});
+    if (src.isDaikin && !GID_DK) return Promise.resolve({});
     const gid = src.isRaspi ? cfg.raspiGid : src.gid;
+    if (src.isDaikin) {
+      return fetchCsv(GID_DK).then(csv => {
+        const { labels, htemps, hhums } = bucketAggregateDaikin(csv, cutoff, cfg.hours);
+        const result = {};
+        labels.forEach((k, i) => { result[k] = { t: htemps[i], h: hhums[i] }; });
+        return result;
+      });
+    }
     return fetchCsv(gid).then(csv => {
       const { labels, temps, hums } = bucketAggregate(csv, cutoff, cfg.hours);
       const result = {};
@@ -422,11 +544,12 @@ function loadCmpData() {
 // ページタブ切替
 // =====================================================
 function switchPage(page) {
-  ['raspi', 'switchbot', 'compare'].forEach(p => {
+  ['raspi', 'switchbot', 'daikin', 'compare'].forEach(p => {
     document.getElementById(`page-${p}`).style.display = (p === page) ? '' : 'none';
     document.getElementById(`tab-${p}`).classList.toggle('active', p === page);
   });
   if (page === 'switchbot' && !swLoaded)  loadSwitchBotData();
+  if (page === 'daikin'    && !dkLoaded)  loadDaikinData();
   if (page === 'compare'   && !cmpLoaded) loadCmpData();
 }
 

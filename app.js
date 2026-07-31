@@ -4,7 +4,7 @@
 const SPREADSHEET_ID = "16iU30vglfkdwiKbNV7LN6-HY4bskH6iHJAtpwlD3SAs";
 const GID_1H  = "317642509";  // Raspi 1時間平均シート
 const GID_RAW = "0";          // Raspi 生データシート
-const GID_DK  = "";           // ダイキン（シートID: スプレッドシート作成後に設定）
+const GID_DK  = "293437016";  // ダイキン_エアコンシート
 
 /**
  * 全タブ共通のモード定義。

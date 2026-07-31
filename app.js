@@ -421,6 +421,25 @@ function loadDaikinData() {
 function renderDaikinCharts(labels, htemps, hhums, otemps, mompows) {
   const ptRadius = labels.length <= 12 ? 3 : 0;
 
+  // 統計カード更新（室内温度 htemp）
+  const validTemps = htemps.filter(v => v !== null && v !== undefined);
+  if (validTemps.length > 0) {
+    const current = validTemps[validTemps.length - 1];
+    const avg     = validTemps.reduce((a, b) => a + b, 0) / validTemps.length;
+    const diff    = current - avg;
+    document.getElementById('dk-stats-card').style.display = 'grid';
+    document.getElementById('dk-stat-current').textContent = `${current.toFixed(1)}°C`;
+    document.getElementById('dk-stat-avg').textContent     = `${avg.toFixed(1)}°C`;
+    const diffEl = document.getElementById('dk-stat-diff');
+    diffEl.textContent  = `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}°C`;
+    const cell = document.getElementById('dk-stat-diff-cell');
+    const absDiff = Math.abs(diff);
+    cell.className = 'stats-cell' +
+      (absDiff >= 15 ? ' diff-danger' :
+       absDiff >= 10 ? ' diff-warning' :
+       absDiff >= 7  ? ' diff-caution' : '');
+  }
+
   if (dkTempChart) dkTempChart.destroy();
   dkTempChart = new Chart(document.getElementById('dkTempChart'), {
     type: 'line',

@@ -78,7 +78,6 @@
       <button class="mode-btn"        id="dk-btn180d" onclick="switchDkMode('180d')">直近180日・24時間平均</button>
     </div>
     <button class="reload-btn" onclick="loadDaikinData()">🔄 グラフを最新化</button>
-    <div class="sw-status" id="dk-status">読み込み中...</div>
     <div id="dk-stats-card" class="stats-card" style="display:none">
       <div class="stats-cell">
         <div class="s-label">現在値</div>
@@ -93,6 +92,7 @@
         <div class="s-value" id="dk-stat-diff">--</div>
       </div>
     </div>
+    <div class="sw-status" id="dk-status">読み込み中...</div>
     <div class="chart-container">
       <div class="chart-title temp">🌡 室内・室外温度推移（℃）</div>
       <div class="canvas-wrapper"><canvas id="dkTempChart"></canvas></div>

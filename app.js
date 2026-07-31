@@ -427,7 +427,7 @@ function renderDaikinCharts(labels, htemps, hhums, otemps, mompows) {
     const current = validTemps[validTemps.length - 1];
     const avg     = validTemps.reduce((a, b) => a + b, 0) / validTemps.length;
     const diff    = current - avg;
-    document.getElementById('dk-stats-card').style.display = 'grid';
+    document.getElementById('dk-stats-card').style.display = 'flex';
     document.getElementById('dk-stat-current').textContent = `${current.toFixed(1)}°C`;
     document.getElementById('dk-stat-avg').textContent     = `${avg.toFixed(1)}°C`;
     const diffEl = document.getElementById('dk-stat-diff');
